@@ -1,0 +1,351 @@
+import re
+import sys
+import os.path
+import filecmp
+import glob
+from difflib import Differ
+from itertools import islice
+
+# Import the email modules we'll need
+import smtplib
+import mimetypes
+from email import encoders
+from email.message import Message
+from email.MIMEBase import MIMEBase
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+##sourcepth = '\\\\ergaDiskM\\DISK_M\\ESRI\\Warnings\\Current\\'
+sourcepth = 'D:\\Cognos_Testing\\Esri\\python\\'
+##targetpth = '\\\\ergaDiskM\\DISK_M\\ESRI\\Warnings\\processing\\'
+targetpth = 'D:\\Cognos_Testing\\Esri\\python\\warning\\'
+##os.chdir(r'\\ergaDiskM\DISK_M\ESRI\Warnings\Current')
+os.chdir(r'D:\\Cognos_Testing\\Esri\\python')
+
+# RESET all string variables
+data1 = ''
+data2 = ''
+PRODUCT = ''
+TITLE = ''
+STATUS = ''
+DESCR = ''
+BOMAREA = ''
+
+for file in glob.glob(sourcepth + '*.xml'):
+    filenm = file[41:-4]
+
+    pattern = re.compile('.amoc')
+    pattern2 = re.compile('_cap')
+    if pattern.search(filenm) is not None:
+        print filenm + ' has .amoc in name. Ignore pdf'
+    elif pattern2.search(filenm) is not None:
+        print filenm + ' has _cap in name. Ignore pdf'   
+    else:
+        file_attachment = filenm + '.pdf'
+    
+    sourcefn = open(file,'r')
+    targetfn = open(targetpth + filenm + '_found.txt', 'w')
+    Previousfn = targetpth + filenm + '_previous.txt'
+
+    if os.path.isfile(Previousfn) and os.access(Previousfn, os.R_OK):
+        print
+        print 'File ' + filenm + ' exists and is readable'
+
+        sourcefn = open(file,'r')
+        targetfn = open(targetpth + filenm + '_found.txt', 'w+')
+        
+        for line in sourcefn:
+            line = line.rstrip()
+            if re.search(r'<issue-time-local tz=', line) :
+                mapsrv = line.strip('<issue-time-local tz=')
+                mapsrv = mapsrv.rstrip()
+                line = targetfn.writelines(mapsrv[6:-19] + '\n')
+
+        Previousfn = open(targetpth + filenm + '_previous.txt', 'r')
+        targetfn = open(targetpth + filenm + '_found.txt', 'r')
+
+        with open(targetpth + filenm + '_found.txt', 'r') as compfile1:
+            data1 = compfile1.read().replace('\n', '')
+            print data1
+
+        with open(targetpth + filenm + '_previous.txt', 'r') as compfile2:
+            data2 = compfile2.read().replace('\n', '')
+            print data2
+        
+        if data1 == data2:
+            print "ignore file"            
+        else:
+            sourcefn = open(file,'r')
+            targetfn = open(targetpth + filenm + '_found.txt', 'w+')
+            Previousfn = open(targetpth + filenm + '_previous.txt', 'w+')
+            
+            for line in sourcefn:
+                line = line.rstrip()
+                if re.search(r'<issue-time-local tz=', line) :
+                    mapsrv = line.strip('<issue-time-local tz=')
+                    mapsrv = mapsrv.rstrip()
+                    line = Previousfn.writelines(mapsrv[6:-19] + '\n')
+
+            print 'PRODUCT: ' + filenm
+            print 'ALERT DATE: ' + mapsrv[6:-19]
+                        
+            sourcefn = open(file,'r')
+            
+            # Check for Cancellation string            
+            title_head1 = '<text type="warning_title">'
+            title_head2 = '<headline>'
+
+            pattern1 = re.compile('<text type="warning_title">')
+            pattern2 = re.compile('<headline>')
+            for i, line in enumerate(sourcefn):
+                if pattern1.search(title_head1) is not None:
+                    for match in re.finditer(pattern1, line):
+                        TITLE = str.upper(line.strip())
+                        print 'TITLE: ' + TITLE[27:-5]
+                elif pattern2.search(title_head2) is not None:
+                    for match in re.finditer(pattern2, line):
+                        TITLE = str.upper(line.strip())
+                        print 'TITLE: ' + TITLE[27:-5]
+
+            with open(file,'r') as e:
+                for line in e:
+                    if '<product-type>' in line:
+                        STATUS = (''.join(islice(e, 1)))
+                        STATUS = str(STATUS.strip((''.join(islice(e, 1)))))
+                        print 'STATUS: ' + STATUS[6:-7]
+
+            with open(file,'r') as g:
+                for line in g:
+                    if '<!--hazards-exist="no" non-warning-info-elements-exist="yes"-->' or '<!--hazards-exist="yes" non-warning-info-elements-exist="yes"-->' in line:
+                        BOMAREA = (''.join(islice(g, 1)))
+                        BOMAREA = BOMAREA.strip((''.join(islice(g, 1))))
+##                        print 'BOM AREA: ' + BOMAREA[10:19]
+
+
+            if STATUS.find('phase>CAN</phase') != -1 or TITLE.find('CANCELLATION') != -1:
+                print
+                print 'Do nothing'
+            else:
+                DateIssued = str(mapsrv[6:-19])
+                Title = TITLE[27:-7]
+                Status = STATUS[6:-7]
+                BomArea = BOMAREA[10:19]
+
+                pattern = re.compile('.amoc')
+                pattern2 = re.compile('_cap')
+                if pattern.search(filenm) is not None:
+                    print filenm + ' has .amoc in name. Ignore pdf'
+                elif pattern2.search(filenm) is not None:
+                    print filenm + ' has _cap in name. Ignore pdf'    
+                else:    
+                    attachment = sourcepth + filenm + '.pdf'
+                    print attachment + ' pdf found'
+                
+                    Subject = 'BOM Weather Warning for IAG issued at ' + DateIssued
+                    
+                    msg = MIMEMultipart('alternative')
+                    
+                    me = 'peter.birksmith@iag.com.au'
+                    you = 'peter.birksmith@iag.com.au'
+                    msg['Subject'] = Subject
+                    msg['From'] = 'peter.birksmith@iag.com.au'
+                    msg['To'] = 'peter.birksmith@iag.com.au','eddie.lee@iag.com.au'
+
+                    # Record the MIME types of both parts - text/plain and text/html.
+                    # Create the body of the message (a plain-text and an HTML version).
+                    html = """\
+                    <html>
+                        <head></head>
+                        <body>
+                            <p>
+                                The following BOM Warning has just been issued :<br>
+                                <br>
+                                <b>Product:</b> {filenm}<br>
+                                <b>Title  :</b> {Title}<br>
+                                <b>Status :</b> {Status}<br>
+                                <br>
+                                For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee.<br>
+                                <br>
+                                Regards
+                            </p>
+                            <p>
+                                Enterprise Operation<br>
+                                Data and Systems Enablement
+                            </p>
+                            <br>
+                            <img src="http://vmgeospatialprd.erga.auiag.corp/images/IAG_logo.png" alt="IAG Logo" style="width:199px;height:165px;">
+                        </body>
+                    </html>""".format(**locals())
+                    part2 = MIMEText(html, 'html')
+
+                    ctype, encoding = mimetypes.guess_type(attachment)
+                    if ctype is None or encoding is not None:
+                        ctype = "application/octet-stream"          
+
+                    maintype, subtype = ctype.split("/", 1)
+
+                    try:
+                        fp = open(file_attachment, 'rb')
+                        attachment = MIMEBase(maintype, subtype)
+                        attachment.set_payload(fp.read())
+                        fp.close()
+                        encoders.encode_base64(attachment)
+                        attachment.add_header("Content-Disposition", "attachment", filename=file_attachment)
+                        msg.attach(attachment)
+                        msg.attach(part2)
+                    except IOError, e:
+                        print e.errno
+                        msg.attach(part2)
+                    
+                    # Send the message via our own SMTP server, but don't include the
+                    # envelope header.
+                    s = smtplib.SMTP('Exch-smtp2.auiag.corp')
+                    s.sendmail(me, [you], msg.as_string())
+                    s.quit()
+
+        targetfn.close()
+        Previousfn.close()        
+        
+    else:
+        print
+        print 'Either file is missing or is not readable'
+
+        sourcefn = open(file,'r')
+        Previousfn = open(targetpth + filenm + '_previous.txt', 'w+')
+        targetfn = open(targetpth + filenm + '_found.txt', 'w+')
+
+        for line in sourcefn:
+            line = line.rstrip()
+            if re.search(r'<issue-time-local tz=', line) :
+                mapsrv = line.strip('<issue-time-local tz=')
+                mapsrv = mapsrv.rstrip()
+                line = Previousfn.writelines(mapsrv[6:-19] + '\n')
+                line = targetfn.writelines(mapsrv[6:-19] + '\n')
+
+        sourcefn = open(file,'r')
+            
+        print 'PRODUCT: ' + filenm
+        print 'ALERT DATE: ' + mapsrv[6:-19]
+                
+        sourcefn = open(file,'r')
+        # Check for Cancellation string
+
+        title_head1 = '<text type="warning_title">'
+        title_head2 = '<headline>'
+
+        pattern1 = re.compile('<text type="warning_title">')
+        pattern2 = re.compile('<headline>')
+        for i, line in enumerate(sourcefn):
+            if pattern1.search(title_head1) is not None:
+                for match in re.finditer(pattern1, line):
+                    TITLE = str.upper(line.strip())
+                    print 'TITLE: ' + TITLE[27:-5]
+            elif pattern2.search(title_head2) is not None:
+                for match in re.finditer(pattern2, line):
+                    TITLE = str.upper(line.strip())
+                    print 'TITLE: ' + TITLE[27:-5]
+
+        with open(file,'r') as e:
+            for line in e:
+                if '<product-type>' in line:
+                    STATUS = (''.join(islice(e, 1)))
+                    STATUS = str(STATUS.strip((''.join(islice(e, 1)))))
+                    print 'STATUS: ' + STATUS[6:-7]
+
+        with open(file,'r') as g:
+            for line in g:
+                if '<!--hazards-exist="no" non-warning-info-elements-exist="yes"-->' or '<!--hazards-exist="yes" non-warning-info-elements-exist="yes"-->' in line:
+                    BOMAREA = (''.join(islice(g, 1)))
+                    BOMAREA = BOMAREA.strip((''.join(islice(g, 1))))
+##                    print 'BOM AREA: ' + BOMAREA[10:19]
+
+        if STATUS.find('phase>CAN</phase') != -1 or TITLE.find('CANCELLATION') != -1:
+            print
+            print 'Do nothing'
+        else:
+            DateIssued = str(mapsrv[6:-19])
+            Status = STATUS[6:-7]
+            Title = TITLE[27:-7]
+            BomArea = BOMAREA[10:19]
+
+            pattern = re.compile('.amoc')
+            pattern2 = re.compile('_cap')
+            if pattern.search(filenm) is not None:
+                print filenm + ' has .amoc in name. Ignore pdf'
+            elif pattern2.search(filenm) is not None:
+                print filenm + ' has _cap in name. Ignore pdf'   
+            else:    
+                attachment = 'M:\\ESRI\\Warnings\\Current\\' + filenm + '.pdf'
+                print attachment
+                print filenm + ' pdf found'
+                
+                Subject = 'BOM Weather Warning for IAG issued at ' + DateIssued
+                
+                msg = MIMEMultipart('alternative')
+                
+                me = 'peter.birksmith@iag.com.au'
+                you = 'peter.birksmith@iag.com.au'
+                msg['Subject'] = Subject
+                msg['From'] = 'peter.birksmith@iag.com.au'
+                msg['To'] = 'peter.birksmith@iag.com.au'
+
+                
+                # Record the MIME types of both parts - text/plain and text/html.
+            
+                # Create the body of the message (a plain-text and an HTML version).
+                html = """\
+                <html>
+                    <head></head>
+                    <body>
+                        <p>
+                            The following BOM Warning has just been issued :<br>
+                            <br>
+                            <b>Product:</b> {filenm}<br>
+                            <b>Title  :</b> {Title}<br>
+                            <b>Status :</b> {Status}<br>
+                            <br>
+                            For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee.<br>
+                            <br>
+                            Regards
+                        </p>
+                        <p>
+                            Enterprise Operation<br>
+                            Data and Systems Enablement
+                        </p>
+                        <br>
+                        <img src="http://vmgeospatialprd.erga.auiag.corp/images/IAG_logo.png" alt="IAG Logo" style="width:199px;height:165px;">
+                    </body>
+                </html>""".format(**locals())
+                part2 = MIMEText(html, 'html')
+
+                ctype, encoding = mimetypes.guess_type(attachment)
+
+                if ctype is None or encoding is not None:
+                    ctype = "application/octet-stream"          
+
+                maintype, subtype = ctype.split("/", 1)
+
+                try:
+                    fp = open(file_attachment, 'rb')
+                    attachment = MIMEBase(maintype, subtype)
+                    attachment.set_payload(fp.read())
+                    fp.close()
+                    encoders.encode_base64(attachment)
+                    attachment.add_header("Content-Disposition", "attachment", filename=file_attachment)
+                    msg.attach(attachment)
+                    msg.attach(part2)
+                except IOError, e:
+                    print e.errno
+                    msg.attach(part2)
+                
+                # Send the message via our own SMTP server, but don't include the
+                # envelope header.
+                s = smtplib.SMTP('Exch-smtp2.auiag.corp')
+                s.sendmail(me, [you], msg.as_string())
+                s.quit()
+            
+        targetfn.close()
+        Previousfn.close()
+        
+    sourcefn.close()
+
