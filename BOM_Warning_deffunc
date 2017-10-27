@@ -1,0 +1,278 @@
+import re
+import sys
+import os.path
+import filecmp
+import glob
+from difflib import Differ
+from itertools import islice
+
+# Import the email modules we'll need
+import smtplib
+import mimetypes
+from email import encoders
+from email.message import Message
+from email.MIMEBase import MIMEBase
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+##sourcepth = '\\\\ergaDiskM\\DISK_M\\ESRI\\Warnings\\Current\\'
+sourcepth = 'D:\\Cognos_Testing\\Esri\\python\\'
+##targetpth = '\\\\ergaDiskM\\DISK_M\\ESRI\\Warnings\\processing\\'
+targetpth = 'D:\\Cognos_Testing\\Esri\\python\\warning\\'
+##os.chdir(r'\\ergaDiskM\DISK_M\ESRI\Warnings\Current')
+os.chdir(r'D:\\Cognos_Testing\\Esri\\python')
+
+# RESET all string variables
+data1 = ''
+data2 = ''
+PRODUCT = ''
+TITLE = ''
+CANCSTATE = ''
+STATUS = ''
+DESCR = ''
+BOMAREA = ''
+BomArea = ''
+file_attachment = ''
+filenm = ''
+issuedt = ''
+Previousfn = ''
+issuedt = ''
+flag = 0
+
+def WarnMsgXMLcompare_fn(file,filenm,file_attachment):
+    filenm = file[-12:-4]
+    
+    pattern = re.compile('.amoc')
+    pattern2 = re.compile('_cap')
+    if pattern.search(filenm) is not None:
+        file_attachment = 1
+    elif pattern2.search(filenm) is not None:
+        file_attachment = 1
+    else:
+        file_attachment = filenm + '.pdf'
+        
+    return (file,filenm,file_attachment);
+
+def ExistingWarning_fn(file,filenm,targetpth,issuedt,flag):
+    sourcefn = open(file,'r')
+    targetfn = open(targetpth + filenm + '_found.txt', 'w+')
+    
+    for line in sourcefn:
+        line = line.rstrip()
+        if re.search(r'<issue-time-local tz=', line) :
+            issuedt = line.strip('<issue-time-local tz=')
+            issuedt = issuedt.rstrip()
+            line = targetfn.writelines(issuedt[6:-19] + '\n')
+
+    Previousfn = open(targetpth + filenm + '_previous.txt', 'r')
+    targetfn = open(targetpth + filenm + '_found.txt', 'r')
+
+    with open(targetpth + filenm + '_found.txt', 'r') as compfile1:
+        data1 = str(compfile1.read().replace('\n', ''))
+        print data1
+    with open(targetpth + filenm + '_previous.txt', 'r') as compfile2:
+        data2 = str(compfile2.read().replace('\n', ''))
+        print data2
+    if data1 == data2:
+        flag = 1
+    else:
+        flag = 0
+        sourcefn = open(file,'r')
+        targetfn = open(targetpth + filenm + '_found.txt', 'w+')
+        Previousfn = open(targetpth + filenm + '_previous.txt', 'w+')
+        
+        for line in sourcefn:
+            line = line.rstrip()
+            if re.search(r'<issue-time-local tz=', line) :
+                issuedt = line.strip('<issue-time-local tz=')
+                issuedt = issuedt.rstrip()
+                line = Previousfn.writelines(issuedt[6:-19] + '\n')
+
+    targetfn.close()
+    Previousfn.close()
+    sourcefn.close()
+    return (file,filenm,targetpth,issuedt,flag);
+
+def NewWarning_fn(file,filenm,targetpth,issuedt):
+    sourcefn = open(file,'r')
+    Previousfn = open(targetpth + filenm + '_previous.txt', 'w+')
+    targetfn = open(targetpth + filenm + '_found.txt', 'w+')
+
+    for line in sourcefn:
+        line = line.rstrip()
+        if re.search(r'<issue-time-local tz=', line) :
+            issuedt = line.strip('<issue-time-local tz=')
+            issuedt = issuedt.rstrip()
+            line = Previousfn.writelines(issuedt[6:-19] + '\n')
+            line = targetfn.writelines(issuedt[6:-19] + '\n')
+
+    targetfn.close()
+    Previousfn.close()
+    sourcefn.close()
+    return (file,filenm,targetpth,issuedt);
+
+def WarnMsgVariable_fn(file,filenm,targetpth,issuedt,TITLE,CANCSTATE,STATUS,BOMAREA):
+    sourcefn = open(file,'r')
+    
+    title_head1 = '<text type="warning_title">'
+    title_head2 = '<headline>'
+    title_head3 = 'Cancellation'
+    
+    pattern1 = re.compile('<text type="warning_title">')
+    pattern2 = re.compile('<headline>')
+    pattern3 = re.compile('Cancellation')   
+    
+    for i, line in enumerate(sourcefn):
+        if pattern1.search(title_head1) is not None:
+            for match in re.finditer(pattern1, line):
+                TITLE = str.upper(line.strip())
+                
+        elif pattern2.search(title_head2) is not None:
+            for match in re.finditer(pattern2, line):
+                TITLE = str.upper(line.strip())
+
+    with open(file,'r') as d:
+        for line in d:
+            if pattern3.search(line):
+                CANCSTATE = str(line)
+
+    with open(file,'r') as e:
+        for line in e:
+            if '<product-type>' in line:
+                STATUS = (''.join(islice(e, 1)))
+                STATUS = str(STATUS.strip((''.join(islice(e, 1)))))
+
+    with open(file,'r') as g:
+        for line in g:
+            if '</warning-info>' in line:
+                BOMAREA = (''.join(islice(g, 4)))
+                BOMAREA = BOMAREA.strip((''.join(islice(g, 4))))
+                BOMAREA = re.sub(r'[^\w]', ' ', BOMAREA)
+
+    sourcefn.close()
+    return (file,filenm,targetpth,issuedt,TITLE,CANCSTATE,STATUS,BOMAREA);
+
+def WarnMsgEmailer_fn(sourcepth,issuedt,TITLE,STATUS,BOMAREA,filenm,file_attachment):
+    DateIssued = str(issuedt[6:-19])
+    Title = TITLE[27:-7]
+    Status = STATUS[6:-7]
+    BomArea = BOMAREA[115:]
+
+    attachment = sourcepth + filenm + '.pdf'
+           
+    Subject = 'BOM Weather Warning for IAG issued at ' + DateIssued
+    
+    msg = MIMEMultipart('alternative')
+    
+    me = 'peter.birksmith@iag.com.au'
+    you = 'peter.birksmith@iag.com.au'
+    msg['Subject'] = Subject
+    msg['From'] = 'peter.birksmith@iag.com.au'
+    msg['To'] = 'peter.birksmith@iag.com.au,eddie.Lee@iag.com.au,david.chung@iag.com.au'
+
+    # Record the MIME types of both parts - text/plain and text/html.
+    # Create the body of the message (a plain-text and an HTML version).
+    html = """\
+    <html>
+        <head></head>
+        <body>
+            <p>
+                The following BOM Warning has just been issued :<br>
+                <br>
+                <b>Product:</b> {filenm}<br>
+                <b>Title&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;:</b> {Title}<br>
+                <b>Status&nbsp;&nbsp;&nbsp;:</b> {Status}<br>
+                <b>BOM Area:</b> {BomArea}<br>
+                <br>
+                For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee.<br>
+                <br>
+                Regards
+            </p>
+            <p>
+                Enterprise Operation<br>
+                Data and Systems Enablement
+            </p>
+            <br>
+            <img src="http://vmgeospatialprd.erga.auiag.corp/images/IAG_logo_sm.png" alt="IAG Logo" style="width:61px;height:61px;">
+        </body>
+    </html>""".format(**locals())
+    part2 = MIMEText(html, 'html')
+
+    ctype, encoding = mimetypes.guess_type(attachment)
+    if ctype is None or encoding is not None:
+        ctype = "application/octet-stream"          
+
+    maintype, subtype = ctype.split("/", 1)
+
+    try:
+        fp = open(file_attachment, 'rb')
+        attachment = MIMEBase(maintype, subtype)
+        attachment.set_payload(fp.read())
+        fp.close()
+        encoders.encode_base64(attachment)
+        attachment.add_header("Content-Disposition", "attachment", filename=file_attachment)
+        msg.attach(attachment)
+        msg.attach(part2)
+    except IOError, e:
+        print e.errno
+        msg.attach(part2)
+    
+    # Send the message via our own SMTP server, but don't include the
+    # envelope header.
+    s = smtplib.SMTP('Exch-smtp2.auiag.corp')
+    s.sendmail(me, [you], msg.as_string())
+    s.quit()
+    return (sourcepth,issuedt,TITLE,STATUS,BOMAREA,filenm,file_attachment);
+
+for file in glob.glob(sourcepth + '*.xml'):
+    
+    file,filenm,file_attachment = WarnMsgXMLcompare_fn(file,filenm,file_attachment)
+    print file_attachment
+    
+    if file_attachment == 1:
+        print 'amoc or cap file found'
+        print
+    else:
+        sourcefn = open(file,'r')
+        targetfn = open(targetpth + filenm + '_found.txt', 'w')
+        Previousfn = targetpth + filenm + '_previous.txt'
+
+        if os.path.isfile(Previousfn) and os.access(Previousfn, os.R_OK):
+            print 'File ' + filenm + ' exists and is readable'
+
+            file,filenm,targetpth,issuedt,flag = ExistingWarning_fn(file,filenm,targetpth,issuedt,flag)
+            print issuedt
+            if flag == 1:
+                print 'No Change to issued date'
+                print
+            else:
+                file,filenm,targetpth,issuedt,TITLE,CANCSTATE,STATUS,BOMAREA = WarnMsgVariable_fn(file,filenm,targetpth,issuedt,TITLE,CANCSTATE,STATUS,BOMAREA)    
+                
+                print 'TITLE: ' + TITLE
+                print 'Flood warning - ' + CANCSTATE
+                print 'STATUS :' + STATUS
+                print 'BOM Area :' + BOMAREA
+                if STATUS.find('phase>CAN</phase') != -1 or TITLE.find('CANCELLATION') != -1 or (str(CANCSTATE)):
+                    print 
+                    print 'Cancellation found Do nothing'
+                else:
+                    sourcepth,issuedt,TITLE,STATUS,BOMAREA,filenm,file_attachment = WarnMsgEmailer_fn(sourcepth,issuedt,TITLE,STATUS,BOMAREA,filenm,file_attachment)
+        else:
+            print
+            print 'Either file ' + filenm + ' is missing or is not readable'
+
+            file,filenm,targetpth,issuedt = NewWarning_fn(file,filenm,targetpth,issuedt)
+
+            file,filenm,targetpth,issuedt,TITLE,CANCSTATE,STATUS,BOMAREA = WarnMsgVariable_fn(file,filenm,targetpth,issuedt,TITLE,CANCSTATE,STATUS,BOMAREA)
+            print 'TITLE: ' + TITLE
+            print 'Flood warning - ' + CANCSTATE
+            print 'STATUS :' + STATUS
+            print 'BOM Area :' + BOMAREA
+            if STATUS.find('phase>CAN</phase') != -1 or TITLE.find('CANCELLATION') != -1 or (str(CANCSTATE)):
+                print
+                print 'Cancellation found Do nothing'
+            else:
+                sourcepth,issuedt,TITLE,STATUS,BOMAREA,filenm,file_attachment = WarnMsgEmailer_fn(sourcepth,issuedt,TITLE,STATUS,BOMAREA,filenm,file_attachment)
+
+
+
