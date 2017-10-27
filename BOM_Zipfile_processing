@@ -1,0 +1,40 @@
+import os.path, time
+import re
+import sys
+import filecmp
+import glob
+from itertools import islice
+import shapefile
+
+from mpl_toolkits.basemap import Basemap
+import matplotlib.pyplot as plt
+ 
+sourcepth = 'D:\\Cognos_Testing\\Esri\\python\\'
+targetpth = 'D:\\Cognos_Testing\\Esri\\python\\unzipped\\'
+
+os.chdir(r'D:/Cognos_Testing/Esri/python/unzipped')
+for file in glob.glob('*.shp'):
+    productid = file[:8]
+    print file
+    print productid
+    print "last modified: %s" % time.ctime(os.path.getmtime(file))
+    print "created: %s" % time.ctime(os.path.getctime(file))
+    sf = shapefile.Reader(r'D:/Cognos_Testing/Esri/python/unzipped/' + file)
+    shapes = sf.shapes()
+    fields = sf.fields
+    assert fields
+    print shapes
+    print fields
+    print '****'
+    print
+
+    map = Basemap(llcrnrlon=-0.5,llcrnrlat=39.8,urcrnrlon=4.,urcrnrlat=43.,
+             resolution='i', projection='tmerc', lat_0 = 39.5, lon_0 = 1)
+
+    map.drawmapboundary(fill_color='aqua')
+    map.fillcontinents(color='#ddaa66',lake_color='aqua')
+    map.drawcoastlines()
+
+    map.readshapefile(r'D:/Cognos_Testing/Esri/python/unzipped/'+ file, 'IDW60266')
+
+    plt.show()
