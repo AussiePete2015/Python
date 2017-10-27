@@ -1,0 +1,418 @@
+import xlsxwriter
+import pyodbc
+
+# Database connection to GEO DATABASE
+db_connection = pyodbc.connect('Driver={SQL Server Native Client 11.0};Server=BISYS-SQL-ORBIT\UAT;Database=ESRI_GISDATA;uid=########;pwd=#########')
+db_cursor = db_connection.cursor()
+
+sql_getgid = """
+Select TOP 1[GID]
+FROM [ESRI_GISDATA].[GISAdmin].[INCIDENTS_ALTERS]
+LEFT OUTER JOIN [ESRI_GISDATA].[GISAdmin].[INCIDENTS_HAIL]
+ON [INCIDENTS_ALTERS].[GEOEVENTID] = [INCIDENTS_HAIL].[GID] 
+WHERE [INCIDENTS_ALTERS].[FEED_NAME] = 'Hail'
+AND [INCIDENTS_HAIL].[HAILPROBABILITY] >= 90 AND VIL >= 50
+GROUP BY GID, IMPACTED_POSTCODES, STARTDATETIME
+HAVING MAX([INCIDENTS_ALTERS].[STARTDATETIME]) = MAX([INCIDENTS_HAIL].[EVENTDATETIME])
+ORDER BY [INCIDENTS_ALTERS].[STARTDATETIME] DESC
+"""
+
+db_cursor.execute(sql_getgid)
+getgid = db_cursor.fetchall()
+
+# Extract String from List
+geoeventid = [str(x) for x in getgid[0]]
+gid = ','.join(geoeventid)
+
+# Create a workbook and add a worksheet.
+workbook = xlsxwriter.Workbook('D:\\downloads\\WFI_' + gid + '.xlsx')
+worksheet = workbook.add_worksheet()
+
+# Get Major Event GEOEVENTID for filename
+sql_command = """
+SET NOCOUNT ON
+
+DECLARE @S varchar(max),
+        @Split char(1),
+        @X xml,
+		@GID varchar(10),
+		@filepath varchar(max),
+		@sql as varchar(max),
+		@impact_poc as varchar(5),
+		@pc_intersect as varchar(25),
+		@Riskkey as varchar(25),
+		@cnt as int = 0,
+		@poly_geom  geometry,
+		@pif_geom geometry,
+		@brand as varchar(5)
+
+SET @S = ' '
+SET @X = ' '
+
+Select Top 1 @GID=[GID]
+FROM [ESRI_GISDATA].[GISAdmin].[INCIDENTS_ALTERS]
+LEFT OUTER JOIN [ESRI_GISDATA].[GISAdmin].[INCIDENTS_HAIL]
+ON [INCIDENTS_ALTERS].[GEOEVENTID] = [INCIDENTS_HAIL].[GID] 
+WHERE [INCIDENTS_ALTERS].[FEED_NAME] = 'Hail'
+AND [INCIDENTS_HAIL].[HAILPROBABILITY] >= 90 AND VIL >= 50
+GROUP BY GID, IMPACTED_POSTCODES, STARTDATETIME
+HAVING MAX([INCIDENTS_ALTERS].[STARTDATETIME]) = MAX([INCIDENTS_HAIL].[EVENTDATETIME])
+ORDER BY [INCIDENTS_ALTERS].[STARTDATETIME] DESC
+
+select @S = [IMPACTED_POSTCODES] , @Split = ',' from 
+(
+Select TOP 1[IMPACTED_POSTCODES]
+FROM [ESRI_GISDATA].[GISAdmin].[INCIDENTS_ALTERS]
+LEFT OUTER JOIN [ESRI_GISDATA].[GISAdmin].[INCIDENTS_HAIL]
+ON [INCIDENTS_ALTERS].[GEOEVENTID] = [INCIDENTS_HAIL].[GID] 
+WHERE [INCIDENTS_ALTERS].[FEED_NAME] = 'Hail'
+AND [INCIDENTS_HAIL].[HAILPROBABILITY] >= 90 AND VIL >= 50
+GROUP BY GID, IMPACTED_POSTCODES, STARTDATETIME
+HAVING MAX([INCIDENTS_ALTERS].[STARTDATETIME]) = MAX([INCIDENTS_HAIL].[EVENTDATETIME])
+ORDER BY [INCIDENTS_ALTERS].[STARTDATETIME] DESC
+) AS ROW
+
+SELECT @X = CONVERT(xml,' <root> <s>' + REPLACE(@S,@Split,'</s> <s>') + '</s>   </root> ');
+
+SELECT [impacted_postcode] = T.c.value('.','varchar(20)') 
+INTO #TempTbl
+FROM @X.nodes('/root/s') T(c)
+
+SELECT @cnt = count(*) from #TempTbl
+
+Set @brand = 'DI'
+
+DECLARE postcode_cursor CURSOR FOR 
+SELECT impacted_postcode from #TempTbl
+
+OPEN postcode_cursor
+Fetch next from postcode_cursor into @impact_poc
+While @@FETCH_STATUS = 0
+Begin
+
+	DECLARE PCIntersect_cursor CURSOR FOR
+	SELECT [RISK_KEY] FROM [GISAdmin].[FC_PIFALLBRANDS] WHERE [BRAND] = @brand AND [POSTCODE] = @impact_poc
+	
+	Select @cnt = count([RISK_KEY]) FROM [GISAdmin].[FC_PIFALLBRANDS] WHERE [BRAND] = @brand AND [POSTCODE] = @impact_poc
+
+	OPEN PCIntersect_cursor
+	Fetch next from PCIntersect_cursor into @pc_intersect
+	WHILE @cnt >= 1
+	Begin	
+		Set @cnt = @cnt - 1
+				
+		Select @poly_geom = SHAPE.STAsText()
+		from [GISAdmin].[INCIDENTS_ALTERS]
+		where GEOEVENTID = @GID
+
+		SELECT @pif_geom = SHAPE.STAsText() 
+		FROM [GISAdmin].[FC_PIFALLBRANDS]
+		where [BRAND] = @brand
+		AND [POSTCODE] = @impact_poc
+		And [RISK_KEY] = @pc_intersect
+
+		While (select @poly_geom.STIntersects(@pif_geom) as IntersectValue) = 1
+		Begin
+			SELECT BRAND,
+				LINE_OF_BUSINESS,
+				POLICY_KEY,
+				RISK_KEY,
+				POLICY_NUMBER,
+				SUBCOMPANY,
+				GROUP_,
+				COVERAGE,
+				POLICY_INFORCE_DATE,
+				POLICY_START_DATE,
+				POLICY_END_DATE,
+				POLCOUNT,
+				RISKCOUNT,
+				SUM_INSURED,
+				REGISTRATION,
+				MAKE,
+				MODEL,
+				YEAR_MANUFACTURED,
+				TOWN,
+				POSTCODE,
+				STATE_,
+				STREET_NUMBER,
+				STREET_NAME,
+				STREET_SUFFIX,
+				STREET_OTHERDETAILS,
+				GEOCODED_TOWN,
+				GEOCODED_POSTCODE,
+				GEOCODED_STATE,
+				GEOCODED_STREET_NAME,
+				INSURED_NAME,
+				INSURED_HOMEPHONE,
+				INSURED_WORKPHONE,
+				INSURED_MOBEPHONE,
+				INSURED_OTHERPHONE,
+				INSURED_EMAIL,
+				SECOND_INSURED_NAME,
+				SECOND_INSURED_HOMEPHONE,
+				SECOND_INSURED_WORKPHONE,
+				SECOND_INSURED_MOBEPHONE,
+				SECOND_INSURED_EMAIL,
+				AGENCY_NAME,
+				BROKER,
+				FLOOD_FLAG,
+				FLOOD_PREMIUM,
+				FLOOD_COVERAGE,
+				FLOOD_RISK_CONTENTS,
+				FLOOD_RISK_BUILDING,
+				BUSHFIRE_RATING,
+				EMBARGO,
+				YEAR_CONSTRUCTED,
+				CONSTRUCTION_TYPE,
+				ROOF_TYPE,
+				WALLTYPE,
+				FLOORTYPE,
+				UNIT_FLAG,
+				HH_HIGH_RISK_AREA_FLAG,
+				POLICY_STATUS,
+				POLICY_PAID,
+				NEWBUSINESS_RENEWAL
+			FROM [GISAdmin].[FC_PIFALLBRANDS] 
+			WHERE [BRAND] = @brand 
+			AND [POSTCODE] = @impact_poc
+			AND [POLICY_KEY] = @pc_intersect
+			--Select @GID AS geoeventid , @impact_poc as postcode, @pc_intersect as risk_key
+		END
+		Fetch next from PCIntersect_cursor into @pc_intersect
+	END
+	
+	Fetch next from postcode_cursor into @impact_poc 
+	close PCIntersect_cursor
+	deallocate PCIntersect_cursor
+END
+close postcode_cursor
+deallocate postcode_cursor
+"""
+
+db_cursor.execute(sql_command)
+rows = db_cursor.fetchall()
+
+print rows
+
+xlrow = 1
+xlcol = 0
+
+header1 = '&L&G WFI PIF for Major Hail Event'
+footer1 = ('For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee'
+           ' Regards'
+           ' '
+           'Enterprise Operation '
+           'Data and Systems Enablement')
+
+# Adjust the page top margin to allow space for the header image.
+worksheet.set_margins(top=1.3)
+
+worksheet.set_header(header1,{'bold': True, 'font_color': 'purple', 'font_size': '14' , 'image_left': 'D:\\My Documents\\images\\logos\\iag_sm.png'})
+worksheet.set_footer(footer1)
+
+##worksheet.set_column('A:A',11)       #[Impacted_Postcode] [varchar](10) NULL,
+worksheet.set_column('B:B',11)       #[BRAND] [varchar](10) NULL,
+worksheet.set_column('C:C',11)       #[SUBCOMPANY] [varchar](10) NULL,
+worksheet.set_column('D:D',11)       #[LINE_OF_BUSINESS]
+worksheet.set_column('E:E',11)       #[POLICY_KEY]
+worksheet.set_column('F:F',11)       #[RISK_KEY]
+worksheet.set_column('G:G',50)       #[POLICY_NUMBER] [varchar](14) NULL,
+worksheet.set_column('H:H',50)       #[GROUP_] [varchar](255) NULL,
+worksheet.set_column('I:I',50)       #[COVERAGE] [varchar](255) NULL,
+worksheet.set_column('J:J',20)       #[POLICY_INFORCE_DATE] [datetime] NULL,
+worksheet.set_column('K:K',20)       #[POLICY_START_DATE] [datetime] NULL,
+worksheet.set_column('L:L',20)       #[POLICY_END_DATE] [datetime] NULL,
+worksheet.set_column('M:M',11)       #[POLCOUNT] [float] NULL,
+worksheet.set_column('N:N',11)       #[RISKCOUNT] [float] NULL,
+worksheet.set_column('O:O',11)       #[SUM_INSURED] [float] NULL,
+worksheet.set_column('P:P',11)       #[REGISTRATION] [varchar](8) NULL,
+worksheet.set_column('Q:Q',11)       #[MAKE] [varchar](15) NULL,
+worksheet.set_column('R:R',11)       #[MODEL] [varchar](15) NULL,
+worksheet.set_column('S:S',11)       #[YEAR_MANUFACTURED] [float] NULL,
+worksheet.set_column('T:T',20)       #[TOWN] [varchar](255) NULL,
+worksheet.set_column('U:U',11)       #[POSTCODE] [varchar](255) NULL,
+worksheet.set_column('V:V',11)       #[STATE_] [varchar](255) NULL,
+worksheet.set_column('W:W',11)       #[STREET_NUMBER] [varchar](30) NULL,
+worksheet.set_column('X:X',20)       #[STREET_NAME] [varchar](255) NULL,
+worksheet.set_column('Y:Y',11)       #[STREET_SUFFIX] [varchar](4) NULL,
+worksheet.set_column('Z:Z',11)       #[STREET_OTHERDETAILS] [varchar](255) NULL,
+worksheet.set_column('AA:AA',20)       #[GEOCODED_TOWN] [varchar](255) NULL,
+worksheet.set_column('AB:AB',11)       #[GEOCODED_POSTCODE] [varchar](255) NULL,
+worksheet.set_column('AC:AC',11)       #[GEOCODED_STATE] [varchar](255) NULL,
+worksheet.set_column('AD:AD',11)       #[GEOCODED_STREET_NAME] [varchar](255) NULL,
+worksheet.set_column('AE:AE',11)       #[INSURED_NAME] [varchar](310) NULL,
+worksheet.set_column('AF:AF',11)       #[INSURED_HOMEPHONE] [varchar](100) NULL,
+worksheet.set_column('AG:AG',11)       #[INSURED_WORKPHONE] [varchar](100) NULL,
+worksheet.set_column('AH:AH',11)       #[INSURED_MOBEPHONE] [varchar](100) NULL,
+worksheet.set_column('AI:AI',11)       #[INSURED_OTHERPHONE] [varchar](100) NULL,
+worksheet.set_column('AJ:AJ',11)       #[INSURED_EMAIL] [varchar](100) NULL,
+worksheet.set_column('AK:AK',11)       #[SECOND_INSURED_NAME] [varchar](310) NULL,
+worksheet.set_column('AL:AL',11)       #[SECOND_INSURED_HOMEPHONE] [varchar](100) NULL,
+worksheet.set_column('AM:AM',11)       #[SECOND_INSURED_WORKPHONE] [varchar](100) NULL,
+worksheet.set_column('AN:AN',11)       #[SECOND_INSURED_MOBEPHONE] [varchar](100) NULL,
+worksheet.set_column('AO:AO',11)       #[SECOND_INSURED_EMAIL] [varchar](100) NULL,
+worksheet.set_column('AP:AP',11)       #[AGENCY_NAME] [varchar](255) NULL,
+worksheet.set_column('AQ:AQ',11)       #[BROKER] [varchar](50) NULL,
+worksheet.set_column('AR:AR',11)       #[FLOOD_FLAG] [varchar](1) NULL,
+worksheet.set_column('AS:AS',11)       #[FLOOD_PREMIUM] [float] NULL,
+worksheet.set_column('AT:AT',11)       #[FLOOD_COVERAGE] [varchar](4) NULL,
+worksheet.set_column('AU:AU',11)       #[FLOOD_RISK_CONTENTS] [float] NULL,
+worksheet.set_column('AV:AV',11)       #[FLOOD_RISK_BUILDING] [float] NULL,
+worksheet.set_column('AW:AW',11)       #[BUSHFIRE_RATING] [varchar](50) NULL,
+worksheet.set_column('AX:AX',11)       #[EMBARGO] [varchar](1200) NULL,
+worksheet.set_column('AY:AY',11)       #[YEAR_CONSTRUCTED] [varchar](20) NULL,
+worksheet.set_column('AZ:AZ',11)       #[CONSTRUCTION_TYPE] [varchar](30) NULL,
+worksheet.set_column('BA:BA',11)       #[ROOF_TYPE] [varchar](30) NULL,
+worksheet.set_column('BB:BB',11)       #[WALLTYPE] [varchar](30) NULL,
+worksheet.set_column('BC:BC',11)       #[FLOORTYPE] [varchar](30) NULL,
+worksheet.set_column('BD:BD',11)       #[UNIT_FLAG] [varchar](1) NULL,
+worksheet.set_column('BE:BE',11)       #[HH_HIGH_RISK_AREA_FLAG] [varchar](4) NULL,
+worksheet.set_column('BF:BF',11)       #[POLICY_STATUS] [varchar](9) NULL,
+worksheet.set_column('BG:BG',11)       #[POLICY_PAID] [varchar](1) NULL,
+worksheet.set_column('BH:BH',11)       #[NEWBUSINESS_RENEWAL] [varchar](1) NULL
+
+# Set row height
+worksheet.set_row(0,30)
+
+# Add Center Alignment to cells
+format = workbook.add_format()
+formatdt = workbook.add_format()
+
+# Add a bold format to use to highlight Headers.
+Headerfm = workbook.add_format({'bold': True, 'font_color': 'purple', 'bg_color': '#e6e6e6', 'align': 'center', 'font_size': '11', 'text_wrap': True, 'border': True})
+# Add a bold format to use to highlight Cells.
+Cellfm1 = workbook.add_format({'align': 'center', 'font_size': '9', 'border': True})
+Cellfm2 = workbook.add_format({'indent': 1, 'font_size': '9', 'border': True})
+formatdt.set_num_format('dd/mm/yyyy hh:mm AM/PM')
+# Add a number format for cells with money.
+money = workbook.add_format({'num_format': '$#,##0'})
+
+# worksheet.insert_image('A1', 'python.png')
+##worksheet.write('A1','Impacted_Postcode', Headerfm)
+worksheet.write('B1','BRAND', Headerfm)
+worksheet.write('C1','SUBCOMPANY', Headerfm)
+worksheet.write('D1','LINE_OF_BUSINESS', Headerfm)
+worksheet.write('E1','POLICY_KEY', Headerfm)
+worksheet.write('F1','RISK_KEY', Headerfm)
+worksheet.write('G1','POLICY_NUMBER', Headerfm)
+worksheet.write('H1','GROUP', Headerfm)
+worksheet.write('I1','COVERAGE', Headerfm)
+worksheet.write('J1','POLICY_INFORCE_DATE', Headerfm)
+worksheet.write('K1','POLICY_START_DATE', Headerfm)
+worksheet.write('L1','POLICY_END_DATE', Headerfm)
+worksheet.write('M1','POLCOUNT', Headerfm)
+worksheet.write('N1','RISKCOUNT', Headerfm)
+worksheet.write('O1','SUM_INSURED', Headerfm)
+worksheet.write('P1','REGISTRATION', Headerfm)
+worksheet.write('Q1','MAKE', Headerfm)
+worksheet.write('R1','MODEL', Headerfm),
+worksheet.write('S1','YEAR_MANUFACTURED', Headerfm)
+worksheet.write('T1','TOWN', Headerfm)
+worksheet.write('U1','POSTCODE', Headerfm)
+worksheet.write('V1','STATE_', Headerfm)
+worksheet.write('W1','STREET_NUMBER', Headerfm)
+worksheet.write('X1','STREET_NAME', Headerfm)
+worksheet.write('Y1','STREET_SUFFIX', Headerfm)
+worksheet.write('Z1','STREET_OTHERDETAILS', Headerfm)
+worksheet.write('AA1','GEOCODED_TOWN', Headerfm)
+worksheet.write('AB1','GEOCODED_POSTCODE', Headerfm)
+worksheet.write('AC1','GEOCODED_STATE', Headerfm)
+worksheet.write('AD1','GEOCODED_STREET_NAME', Headerfm)
+worksheet.write('AE1','INSURED_NAME', Headerfm)
+worksheet.write('AF1','INSURED_HOMEPHONE', Headerfm)
+worksheet.write('AG1','INSURED_WORKPHONE', Headerfm)
+worksheet.write('AH1','INSURED_MOBEPHONE', Headerfm)
+worksheet.write('AI1','INSURED_OTHERPHONE', Headerfm)
+worksheet.write('AJ1','INSURED_EMAIL', Headerfm)
+worksheet.write('AK1','SECOND_INSURED_NAME', Headerfm)
+worksheet.write('AL1','SECOND_INSURED_HOMEPHONE', Headerfm)
+worksheet.write('AM1','SECOND_INSURED_WORKPHONE', Headerfm)
+worksheet.write('AN1','SECOND_INSURED_MOBEPHONE', Headerfm)
+worksheet.write('AO1','SECOND_INSURED_EMAIL', Headerfm)
+worksheet.write('AP1','AGENCY_NAME', Headerfm)
+worksheet.write('AQ1','BROKER', Headerfm)
+worksheet.write('AR1','FLOOD_FLAG', Headerfm)
+worksheet.write('AS1','FLOOD_PREMIUM', Headerfm)
+worksheet.write('AT1','FLOOD_COVERAGE', Headerfm)
+worksheet.write('AU1','FLOOD_RISK_CONTENTS', Headerfm)
+worksheet.write('AV1','FLOOD_RISK_BUILDING', Headerfm)
+worksheet.write('AW1','BUSHFIRE_RATING', Headerfm)
+worksheet.write('AX1','EMBARGO', Headerfm)
+worksheet.write('AY1','YEAR_CONSTRUCTED', Headerfm)
+worksheet.write('AZ1','CONSTRUCTION_TYPE', Headerfm)
+worksheet.write('BA1','ROOF_TYPE', Headerfm)
+worksheet.write('BB1','WALLTYPE', Headerfm),
+worksheet.write('BC1','FLOORTYPE', Headerfm)
+worksheet.write('BD1','UNIT_FLAG', Headerfm)
+worksheet.write('BE1','HH_HIGH_RISK_AREA_FLAG', Headerfm)
+worksheet.write('BF1','POLICY_STATUS', Headerfm)
+worksheet.write('BG1','POLICY_PAID', Headerfm)
+worksheet.write('BH1','NEWBUSINESS_RENEWAL', Headerfm)
+
+### Iterate over the data and write it out row by row.
+for BRAND,LINE_OF_BUSINESS,POLICY_KEY, RISK_KEY,POLICY_NUMBER, SUBCOMPANY, GROUP_, COVERAGE,POLICY_INFORCE_DATE, POLICY_START_DATE, POLICY_END_DATE,POLCOUNT, RISKCOUNT, SUM_INSURED, REGISTRATION, MAKE, MODEL,YEAR_MANUFACTURED, TOWN, POSTCODE, STATE_, STREET_NUMBER,STREET_NAME, STREET_SUFFIX, STREET_OTHERDETAILS,GEOCODED_TOWN, GEOCODED_POSTCODE, GEOCODED_STATE,GEOCODED_STREET_NAME, INSURED_NAME, INSURED_HOMEPHONE,INSURED_WORKPHONE, INSURED_MOBEPHONE, INSURED_OTHERPHONE,INSURED_EMAIL, SECOND_INSURED_NAME,SECOND_INSURED_HOMEPHONE, SECOND_INSURED_WORKPHONE,SECOND_INSURED_MOBEPHONE, SECOND_INSURED_EMAIL, AGENCY_NAME,BROKER, FLOOD_FLAG, FLOOD_PREMIUM, FLOOD_COVERAGE,FLOOD_RISK_CONTENTS, FLOOD_RISK_BUILDING, BUSHFIRE_RATING,EMBARGO, YEAR_CONSTRUCTED, CONSTRUCTION_TYPE, ROOF_TYPE,WALLTYPE, FLOORTYPE, UNIT_FLAG, HH_HIGH_RISK_AREA_FLAG,POLICY_STATUS, POLICY_PAID, NEWBUSINESS_RENEWAL in (rows):
+
+##    worksheet.write(xlrow, xlcol, Impacted_Postcode, Cellfm2)
+    worksheet.write(xlrow, xlcol + 1, BRAND, Cellfm2)
+    worksheet.write(xlrow, xlcol + 2, SUBCOMPANY, Cellfm1)
+    worksheet.write(xlrow, xlcol + 3, LINE_OF_BUSINESS, Cellfm1)
+    worksheet.write(xlrow, xlcol + 4, POLICY_KEY, Cellfm1)
+    worksheet.write(xlrow, xlcol + 5, RISK_KEY, Cellfm1)
+    worksheet.write(xlrow, xlcol + 6, POLICY_NUMBER, Cellfm1)
+    worksheet.write(xlrow, xlcol + 7, GROUP_, Cellfm1)
+    worksheet.write(xlrow, xlcol + 8, COVERAGE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 9, POLICY_INFORCE_DATE, formatdt)
+    worksheet.write(xlrow, xlcol + 10, POLICY_START_DATE, formatdt)
+    worksheet.write(xlrow, xlcol + 11, POLICY_END_DATE, formatdt)
+    worksheet.write(xlrow, xlcol + 12, POLCOUNT, Cellfm1)
+    worksheet.write(xlrow, xlcol + 13, RISKCOUNT, Cellfm1)
+    worksheet.write(xlrow, xlcol + 14, SUM_INSURED, Cellfm1)
+    worksheet.write(xlrow, xlcol + 15, REGISTRATION, Cellfm1)
+    worksheet.write(xlrow, xlcol + 16, MAKE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 17, MODEL, Cellfm1)
+    worksheet.write(xlrow, xlcol + 18, YEAR_MANUFACTURED, Cellfm1)
+    worksheet.write(xlrow, xlcol + 19, TOWN, Cellfm2)
+    worksheet.write(xlrow, xlcol + 20, POSTCODE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 21, STATE_, Cellfm1)
+    worksheet.write(xlrow, xlcol + 22, STREET_NUMBER, Cellfm1)
+    worksheet.write(xlrow, xlcol + 23, STREET_NAME, Cellfm2)
+    worksheet.write(xlrow, xlcol + 24, STREET_SUFFIX, Cellfm1)
+    worksheet.write(xlrow, xlcol + 25, STREET_OTHERDETAILS, Cellfm2)
+    worksheet.write(xlrow, xlcol + 26, GEOCODED_TOWN, Cellfm2)
+    worksheet.write(xlrow, xlcol + 27, GEOCODED_POSTCODE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 28, GEOCODED_STATE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 29, GEOCODED_STREET_NAME, Cellfm2)
+    worksheet.write(xlrow, xlcol + 30, INSURED_NAME, Cellfm2)
+    worksheet.write(xlrow, xlcol + 31, INSURED_HOMEPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 32, INSURED_WORKPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 33, INSURED_MOBEPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 34, INSURED_OTHERPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 35, INSURED_EMAIL, Cellfm2)
+    worksheet.write(xlrow, xlcol + 36, SECOND_INSURED_NAME, Cellfm2)
+    worksheet.write(xlrow, xlcol + 37, SECOND_INSURED_HOMEPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 38, SECOND_INSURED_WORKPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 39, SECOND_INSURED_MOBEPHONE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 40, SECOND_INSURED_EMAIL, Cellfm2)
+    worksheet.write(xlrow, xlcol + 41, AGENCY_NAME, Cellfm2)
+    worksheet.write(xlrow, xlcol + 42, BROKER, Cellfm1)
+    worksheet.write(xlrow, xlcol + 43, FLOOD_FLAG, Cellfm1)
+    worksheet.write(xlrow, xlcol + 44, FLOOD_PREMIUM, Cellfm1)
+    worksheet.write(xlrow, xlcol + 45, FLOOD_COVERAGE, Cellfm1)
+    worksheet.write(xlrow, xlcol + 46, FLOOD_RISK_CONTENTS, Cellfm1)
+    worksheet.write(xlrow, xlcol + 47, FLOOD_RISK_BUILDING, Cellfm1)
+    worksheet.write(xlrow, xlcol + 48, BUSHFIRE_RATING, Cellfm2)
+    worksheet.write(xlrow, xlcol + 49, EMBARGO, Cellfm1)
+    worksheet.write(xlrow, xlcol + 50, YEAR_CONSTRUCTED, Cellfm1)
+    worksheet.write(xlrow, xlcol + 51, CONSTRUCTION_TYPE, Cellfm2)
+    worksheet.write(xlrow, xlcol + 52, ROOF_TYPE, Cellfm2)
+    worksheet.write(xlrow, xlcol + 53, WALLTYPE, Cellfm2)
+    worksheet.write(xlrow, xlcol + 54, FLOORTYPE, Cellfm2)
+    worksheet.write(xlrow, xlcol + 55, UNIT_FLAG, Cellfm1)
+    worksheet.write(xlrow, xlcol + 56, HH_HIGH_RISK_AREA_FLAG, Cellfm1)
+    worksheet.write(xlrow, xlcol + 57, POLICY_STATUS, Cellfm1)
+    worksheet.write(xlrow, xlcol + 58, POLICY_PAID, Cellfm1)
+    worksheet.write(xlrow, xlcol + 59, NEWBUSINESS_RENEWAL, Cellfm1)
+    xlrow += 1
+
+workbook.close()
+
