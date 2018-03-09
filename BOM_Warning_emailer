@@ -15,11 +15,11 @@ from email.MIMEBase import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-##sourcepth = '\\\\ergaDiskM\\DISK_M\\ESRI\\Warnings\\Current\\'
+##sourcepth = '\\\\Warnings\\Current\\'
 sourcepth = 'D:\\Cognos_Testing\\Esri\\python\\'
-##targetpth = '\\\\ergaDiskM\\DISK_M\\ESRI\\Warnings\\processing\\'
+##targetpth = '\\\\Warnings\\processing\\'
 targetpth = 'D:\\Cognos_Testing\\Esri\\python\\warning\\'
-##os.chdir(r'\\ergaDiskM\DISK_M\ESRI\Warnings\Current')
+##os.chdir(r'\\Warnings\Current')
 os.chdir(r'D:\\Cognos_Testing\\Esri\\python')
 
 # RESET all string variables
@@ -145,11 +145,11 @@ for file in glob.glob(sourcepth + '*.xml'):
                     
                     msg = MIMEMultipart('alternative')
                     
-                    me = 'peter.birksmith@iag.com.au'
-                    you = 'peter.birksmith@iag.com.au'
+                    me = '<email address>'
+                    you = '<email address>'
                     msg['Subject'] = Subject
-                    msg['From'] = 'peter.birksmith@iag.com.au'
-                    msg['To'] = 'peter.birksmith@iag.com.au','eddie.lee@iag.com.au'
+                    msg['From'] = '<email address>'
+                    msg['To'] = '<email address group>'
 
                     # Record the MIME types of both parts - text/plain and text/html.
                     # Create the body of the message (a plain-text and an HTML version).
@@ -164,7 +164,7 @@ for file in glob.glob(sourcepth + '*.xml'):
                                 <b>Title  :</b> {Title}<br>
                                 <b>Status :</b> {Status}<br>
                                 <br>
-                                For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee.<br>
+                                For any further enhancement please contact ??, for any operational matter please contact ??.<br>
                                 <br>
                                 Regards
                             </p>
@@ -173,7 +173,7 @@ for file in glob.glob(sourcepth + '*.xml'):
                                 Data and Systems Enablement
                             </p>
                             <br>
-                            <img src="http://vmgeospatialprd.erga.auiag.corp/images/IAG_logo.png" alt="IAG Logo" style="width:199px;height:165px;">
+                            <img src="http://<domain>/images/logo.png" alt="Logo" style="width:199px;height:165px;">
                         </body>
                     </html>""".format(**locals())
                     part2 = MIMEText(html, 'html')
@@ -199,7 +199,7 @@ for file in glob.glob(sourcepth + '*.xml'):
                     
                     # Send the message via our own SMTP server, but don't include the
                     # envelope header.
-                    s = smtplib.SMTP('Exch-smtp2.auiag.corp')
+                    s = smtplib.SMTP('<smtp_server>')
                     s.sendmail(me, [you], msg.as_string())
                     s.quit()
 
@@ -275,7 +275,7 @@ for file in glob.glob(sourcepth + '*.xml'):
             elif pattern2.search(filenm) is not None:
                 print filenm + ' has _cap in name. Ignore pdf'   
             else:    
-                attachment = 'M:\\ESRI\\Warnings\\Current\\' + filenm + '.pdf'
+                attachment = 'M:\\Warnings\\Current\\' + filenm + '.pdf'
                 print attachment
                 print filenm + ' pdf found'
                 
@@ -283,11 +283,11 @@ for file in glob.glob(sourcepth + '*.xml'):
                 
                 msg = MIMEMultipart('alternative')
                 
-                me = 'peter.birksmith@iag.com.au'
-                you = 'peter.birksmith@iag.com.au'
+                me = '<email address>'
+                you = '<email address>'
                 msg['Subject'] = Subject
-                msg['From'] = 'peter.birksmith@iag.com.au'
-                msg['To'] = 'peter.birksmith@iag.com.au'
+                msg['From'] = '<email address>'
+                msg['To'] = '<email address>'
 
                 
                 # Record the MIME types of both parts - text/plain and text/html.
@@ -304,7 +304,7 @@ for file in glob.glob(sourcepth + '*.xml'):
                             <b>Title  :</b> {Title}<br>
                             <b>Status :</b> {Status}<br>
                             <br>
-                            For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee.<br>
+                            For any further enhancement please contact ??, for any operational matter please contact ??.<br>
                             <br>
                             Regards
                         </p>
@@ -313,7 +313,7 @@ for file in glob.glob(sourcepth + '*.xml'):
                             Data and Systems Enablement
                         </p>
                         <br>
-                        <img src="http://vmgeospatialprd.erga.auiag.corp/images/IAG_logo.png" alt="IAG Logo" style="width:199px;height:165px;">
+                        <img src="http://<domain>/images/logo.png" alt="Logo" style="width:199px;height:165px;">
                     </body>
                 </html>""".format(**locals())
                 part2 = MIMEText(html, 'html')
@@ -340,7 +340,7 @@ for file in glob.glob(sourcepth + '*.xml'):
                 
                 # Send the message via our own SMTP server, but don't include the
                 # envelope header.
-                s = smtplib.SMTP('Exch-smtp2.auiag.corp')
+                s = smtplib.SMTP('smtp_server')
                 s.sendmail(me, [you], msg.as_string())
                 s.quit()
             
