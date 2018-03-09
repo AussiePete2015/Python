@@ -2,13 +2,13 @@ import xlsxwriter
 import pyodbc
 
 # Database connection to GEO DATABASE
-db_connection = pyodbc.connect('Driver={SQL Server Native Client 11.0};Server=BISYS-SQL-ORBIT\UAT;Database=ESRI_GISDATA;uid=########;pwd=#########')
+db_connection = pyodbc.connect('Driver={SQL Server Native Client 11.0};Server=DBName\Instance;Database=DBNAME;uid=########;pwd=#########')
 db_cursor = db_connection.cursor()
 
 sql_getgid = """
 Select TOP 1[GID]
-FROM [ESRI_GISDATA].[GISAdmin].[INCIDENTS_ALTERS]
-LEFT OUTER JOIN [ESRI_GISDATA].[GISAdmin].[INCIDENTS_HAIL]
+FROM [INCIDENTS_ALTERS]
+LEFT OUTER JOIN [INCIDENTS_HAIL]
 ON [INCIDENTS_ALTERS].[GEOEVENTID] = [INCIDENTS_HAIL].[GID] 
 WHERE [INCIDENTS_ALTERS].[FEED_NAME] = 'Hail'
 AND [INCIDENTS_HAIL].[HAILPROBABILITY] >= 90 AND VIL >= 50
@@ -25,7 +25,7 @@ geoeventid = [str(x) for x in getgid[0]]
 gid = ','.join(geoeventid)
 
 # Create a workbook and add a worksheet.
-workbook = xlsxwriter.Workbook('D:\\downloads\\WFI_' + gid + '.xlsx')
+workbook = xlsxwriter.Workbook('D:\\downloads\\_' + gid + '.xlsx')
 worksheet = workbook.add_worksheet()
 
 # Get Major Event GEOEVENTID for filename
@@ -50,8 +50,8 @@ SET @S = ' '
 SET @X = ' '
 
 Select Top 1 @GID=[GID]
-FROM [ESRI_GISDATA].[GISAdmin].[INCIDENTS_ALTERS]
-LEFT OUTER JOIN [ESRI_GISDATA].[GISAdmin].[INCIDENTS_HAIL]
+FROM [INCIDENTS_ALTERS]
+LEFT OUTER JOIN [INCIDENTS_HAIL]
 ON [INCIDENTS_ALTERS].[GEOEVENTID] = [INCIDENTS_HAIL].[GID] 
 WHERE [INCIDENTS_ALTERS].[FEED_NAME] = 'Hail'
 AND [INCIDENTS_HAIL].[HAILPROBABILITY] >= 90 AND VIL >= 50
@@ -62,8 +62,8 @@ ORDER BY [INCIDENTS_ALTERS].[STARTDATETIME] DESC
 select @S = [IMPACTED_POSTCODES] , @Split = ',' from 
 (
 Select TOP 1[IMPACTED_POSTCODES]
-FROM [ESRI_GISDATA].[GISAdmin].[INCIDENTS_ALTERS]
-LEFT OUTER JOIN [ESRI_GISDATA].[GISAdmin].[INCIDENTS_HAIL]
+FROM [INCIDENTS_ALTERS]
+LEFT OUTER JOIN [INCIDENTS_HAIL]
 ON [INCIDENTS_ALTERS].[GEOEVENTID] = [INCIDENTS_HAIL].[GID] 
 WHERE [INCIDENTS_ALTERS].[FEED_NAME] = 'Hail'
 AND [INCIDENTS_HAIL].[HAILPROBABILITY] >= 90 AND VIL >= 50
@@ -91,9 +91,9 @@ While @@FETCH_STATUS = 0
 Begin
 
 	DECLARE PCIntersect_cursor CURSOR FOR
-	SELECT [RISK_KEY] FROM [GISAdmin].[FC_PIFALLBRANDS] WHERE [BRAND] = @brand AND [POSTCODE] = @impact_poc
+	SELECT [RISK_KEY] FROM [FC_PIFALLBRANDS] WHERE [BRAND] = @brand AND [POSTCODE] = @impact_poc
 	
-	Select @cnt = count([RISK_KEY]) FROM [GISAdmin].[FC_PIFALLBRANDS] WHERE [BRAND] = @brand AND [POSTCODE] = @impact_poc
+	Select @cnt = count([RISK_KEY]) FROM [FC_PIFALLBRANDS] WHERE [BRAND] = @brand AND [POSTCODE] = @impact_poc
 
 	OPEN PCIntersect_cursor
 	Fetch next from PCIntersect_cursor into @pc_intersect
@@ -102,77 +102,19 @@ Begin
 		Set @cnt = @cnt - 1
 				
 		Select @poly_geom = SHAPE.STAsText()
-		from [GISAdmin].[INCIDENTS_ALTERS]
+		from [INCIDENTS_ALTERS]
 		where GEOEVENTID = @GID
 
 		SELECT @pif_geom = SHAPE.STAsText() 
-		FROM [GISAdmin].[FC_PIFALLBRANDS]
+		FROM [FC_PIFALLBRANDS]
 		where [BRAND] = @brand
 		AND [POSTCODE] = @impact_poc
 		And [RISK_KEY] = @pc_intersect
 
 		While (select @poly_geom.STIntersects(@pif_geom) as IntersectValue) = 1
 		Begin
-			SELECT BRAND,
-				LINE_OF_BUSINESS,
-				POLICY_KEY,
-				RISK_KEY,
-				POLICY_NUMBER,
-				SUBCOMPANY,
-				GROUP_,
-				COVERAGE,
-				POLICY_INFORCE_DATE,
-				POLICY_START_DATE,
-				POLICY_END_DATE,
-				POLCOUNT,
-				RISKCOUNT,
-				SUM_INSURED,
-				REGISTRATION,
-				MAKE,
-				MODEL,
-				YEAR_MANUFACTURED,
-				TOWN,
-				POSTCODE,
-				STATE_,
-				STREET_NUMBER,
-				STREET_NAME,
-				STREET_SUFFIX,
-				STREET_OTHERDETAILS,
-				GEOCODED_TOWN,
-				GEOCODED_POSTCODE,
-				GEOCODED_STATE,
-				GEOCODED_STREET_NAME,
-				INSURED_NAME,
-				INSURED_HOMEPHONE,
-				INSURED_WORKPHONE,
-				INSURED_MOBEPHONE,
-				INSURED_OTHERPHONE,
-				INSURED_EMAIL,
-				SECOND_INSURED_NAME,
-				SECOND_INSURED_HOMEPHONE,
-				SECOND_INSURED_WORKPHONE,
-				SECOND_INSURED_MOBEPHONE,
-				SECOND_INSURED_EMAIL,
-				AGENCY_NAME,
-				BROKER,
-				FLOOD_FLAG,
-				FLOOD_PREMIUM,
-				FLOOD_COVERAGE,
-				FLOOD_RISK_CONTENTS,
-				FLOOD_RISK_BUILDING,
-				BUSHFIRE_RATING,
-				EMBARGO,
-				YEAR_CONSTRUCTED,
-				CONSTRUCTION_TYPE,
-				ROOF_TYPE,
-				WALLTYPE,
-				FLOORTYPE,
-				UNIT_FLAG,
-				HH_HIGH_RISK_AREA_FLAG,
-				POLICY_STATUS,
-				POLICY_PAID,
-				NEWBUSINESS_RENEWAL
-			FROM [GISAdmin].[FC_PIFALLBRANDS] 
+			SELECT *
+			FROM [FC_PIFALLBRANDS] 
 			WHERE [BRAND] = @brand 
 			AND [POSTCODE] = @impact_poc
 			AND [POLICY_KEY] = @pc_intersect
@@ -197,8 +139,8 @@ print rows
 xlrow = 1
 xlcol = 0
 
-header1 = '&L&G WFI PIF for Major Hail Event'
-footer1 = ('For any further enhancement please contact David Chung, for any operational matter please contact Eddie Lee'
+header1 = '&L&GPIF for Major Hail Event'
+footer1 = ('For any further enhancement please contact ??, for any operational matter please contact ??'
            ' Regards'
            ' '
            'Enterprise Operation '
@@ -207,7 +149,7 @@ footer1 = ('For any further enhancement please contact David Chung, for any oper
 # Adjust the page top margin to allow space for the header image.
 worksheet.set_margins(top=1.3)
 
-worksheet.set_header(header1,{'bold': True, 'font_color': 'purple', 'font_size': '14' , 'image_left': 'D:\\My Documents\\images\\logos\\iag_sm.png'})
+worksheet.set_header(header1,{'bold': True, 'font_color': 'purple', 'font_size': '14' , 'image_left': 'D:\\My Documents\\images\\logos\\sm.png'})
 worksheet.set_footer(footer1)
 
 ##worksheet.set_column('A:A',11)       #[Impacted_Postcode] [varchar](10) NULL,
@@ -350,7 +292,16 @@ worksheet.write('BG1','POLICY_PAID', Headerfm)
 worksheet.write('BH1','NEWBUSINESS_RENEWAL', Headerfm)
 
 ### Iterate over the data and write it out row by row.
-for BRAND,LINE_OF_BUSINESS,POLICY_KEY, RISK_KEY,POLICY_NUMBER, SUBCOMPANY, GROUP_, COVERAGE,POLICY_INFORCE_DATE, POLICY_START_DATE, POLICY_END_DATE,POLCOUNT, RISKCOUNT, SUM_INSURED, REGISTRATION, MAKE, MODEL,YEAR_MANUFACTURED, TOWN, POSTCODE, STATE_, STREET_NUMBER,STREET_NAME, STREET_SUFFIX, STREET_OTHERDETAILS,GEOCODED_TOWN, GEOCODED_POSTCODE, GEOCODED_STATE,GEOCODED_STREET_NAME, INSURED_NAME, INSURED_HOMEPHONE,INSURED_WORKPHONE, INSURED_MOBEPHONE, INSURED_OTHERPHONE,INSURED_EMAIL, SECOND_INSURED_NAME,SECOND_INSURED_HOMEPHONE, SECOND_INSURED_WORKPHONE,SECOND_INSURED_MOBEPHONE, SECOND_INSURED_EMAIL, AGENCY_NAME,BROKER, FLOOD_FLAG, FLOOD_PREMIUM, FLOOD_COVERAGE,FLOOD_RISK_CONTENTS, FLOOD_RISK_BUILDING, BUSHFIRE_RATING,EMBARGO, YEAR_CONSTRUCTED, CONSTRUCTION_TYPE, ROOF_TYPE,WALLTYPE, FLOORTYPE, UNIT_FLAG, HH_HIGH_RISK_AREA_FLAG,POLICY_STATUS, POLICY_PAID, NEWBUSINESS_RENEWAL in (rows):
+for BRAND,LINE_OF_BUSINESS,POLICY_KEY, RISK_KEY,POLICY_NUMBER, SUBCOMPANY, 
+GROUP_, COVERAGE,POLICY_INFORCE_DATE, POLICY_START_DATE, POLICY_END_DATE,POLCOUNT, 
+RISKCOUNT, SUM_INSURED, REGISTRATION, MAKE, MODEL,YEAR_MANUFACTURED, TOWN, POSTCODE, 
+STATE_, STREET_NUMBER,STREET_NAME, STREET_SUFFIX, STREET_OTHERDETAILS,GEOCODED_TOWN, 
+GEOCODED_POSTCODE, GEOCODED_STATE,GEOCODED_STREET_NAME, INSURED_NAME, INSURED_HOMEPHONE,
+INSURED_WORKPHONE, INSURED_MOBEPHONE, INSURED_OTHERPHONE,INSURED_EMAIL, SECOND_INSURED_NAME,
+SECOND_INSURED_HOMEPHONE, SECOND_INSURED_WORKPHONE,SECOND_INSURED_MOBEPHONE, SECOND_INSURED_EMAIL, 
+AGENCY_NAME,BROKER, FLOOD_FLAG, FLOOD_PREMIUM, FLOOD_COVERAGE,FLOOD_RISK_CONTENTS, FLOOD_RISK_BUILDING, 
+BUSHFIRE_RATING,EMBARGO, YEAR_CONSTRUCTED, CONSTRUCTION_TYPE, ROOF_TYPE,WALLTYPE, FLOORTYPE, UNIT_FLAG, 
+HH_HIGH_RISK_AREA_FLAG,POLICY_STATUS, POLICY_PAID, NEWBUSINESS_RENEWAL in (rows):
 
 ##    worksheet.write(xlrow, xlcol, Impacted_Postcode, Cellfm2)
     worksheet.write(xlrow, xlcol + 1, BRAND, Cellfm2)
